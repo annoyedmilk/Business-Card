@@ -1,62 +1,115 @@
-# Tiny Arcade Business Card
-A pocket-sized gaming console featuring Tiny Tris and Tiny Pacman, built around the powerful CH32V003 RISC-V microcontroller.
+# Yet Another Tiny Arcade Business Card 🎮
 
-![Business Card](pictures/RenderFront.png)
+Turn your pocket into an arcade with this business-card-sized gaming console! Powered by the CH32V003 RISC-V microcontroller, this project brings classic gaming to an ultra-portable form factor.
 
-## What Makes It Special?
-The project combines the minimalism of a business card with the nostalgic charm of classic arcade games. At its heart lies the CH32V003, a remarkably capable RISC-V microcontroller that brings these timeless games to life on a crisp OLED display.
+![Business Card](documentation/RenderFront.png)
 
-## Game Collection
-- **Tiny Tris**: A carefully crafted implementation of the classic falling blocks game
-- **Tiny Pacman**: Navigate mazes and outsmart ghosts in this miniaturized version
+## ✨ Features
 
-## Building Your Own
+- **Ultra-Compact Design**: Fits in your wallet while packing serious gaming power
+- **Powerful Brain**: Built around the CH32V003 RISC-V microcontroller
+- **Crystal Clear Display**: 0.96" OLED screen (SSD1315) for crisp visuals
+- **Long-lasting Power**: Rechargeable LIR2032 battery
+- **Intuitive Controls**: 5 tactile buttons for precise gaming input
+- **Open Source**: Full hardware and software documentation available
 
-### Required Hardware
-- PCB (Gerber files included)
-- CH32V003 microcontroller
-- 0.96" OLED display (SSD1306)
-- 5 tactile switches
-- LIR2032 battery holder
-- Additional components listed in BOM.xlsx
+## 🎯 Games Library
 
-### Software Setup
-1. Install Visual Studio Code and PlatformIO
-2. Connect your WCH-LinkE programmer
-3. Clone this repository:
+### Tiny Tris
+- Classic block-falling gameplay
+- Increasing difficulty levels
+- Score tracking
+
+### Tiny Pacman
+- Authentic maze navigation
+- Ghost AI patterns
+- Power pellets and scoring system
+
+## 🛠️ Build Your Own
+
+### Components Needed
+
+- [ ] PCB (Gerber files provided)
+- [ ] CH32V003 microcontroller
+- [ ] 0.96" OLED display (SSD1315)
+- [ ] 5 tactile switches
+- [ ] LIR2032 battery holder
+- [ ] Additional components (See BOM.xlsx)
+
+### Assembly Instructions
+
+1. Order PCB using provided Gerber files
+2. Gather components from BOM
+3. Follow assembly guide in documentation
+4. Install firmware using one of the methods below
+
+### Firmware Installation Options
+
+#### Option 1: PlatformIO (Recommended)
+1. Install required tools:
+   - Install [Python 3.x](https://www.python.org/downloads/)
+   - Install [PlatformIO IDE](https://platformio.org/install/ide?install=vscode)
+   - Install platform-ch32v: 
+     ```bash
+     pio pkg install platform-ch32v
+2. Clone and build:
    ```bash
    git clone https://github.com/annoyedmilk/Business-Card.git
-   ```
-4. Open project in VS Code with PlatformIO
-5. Build and upload:
-   ```bash
+   cd Business-Card
    pio run -t upload
    ```
 
-## How to Play
-1. Insert a CR2032 battery
-2. Power on using the switch
-3. Select your game using the joystick
-4. Press the action button to start
-5. Enjoy classic gaming on the go!
+#### Option 2: Pre-compiled Binary
+- **Windows**: Use WCH-LinkUtility ([Download](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html))
+- **Cross-platform**: Use either:
+  - minichlink ([GitHub](https://github.com/cnlohr/ch32v003fun/tree/master/minichlink))
+  - rvprog: `pip install rvprog && rvprog -f bin/<firmware>.bin`
 
-## Project Structure
+## 📁 Project Structure
+
 ```
-├── hardware/   # PCB design files
-├── pictures/   # Pictures
-└── software/   # Sourcecode
+├── documentation/
+│   └── RenderFront.png    # Project preview
+├── hardware/
+│   ├── Gerber.zip         # PCB manufacturing files
+│   ├── BOM.csv            # Parts list
+│   └── Schematic.pdf      # Circuit diagram
+└── software/
+    ├── src/               # Source code
+    │   ├── main.c
+    │   └── ...
+    └── platformio.ini     # Build configuration
 ```
 
-## Acknowledgments
-This project stands on the shoulders of giants:
+## 🎮 Gaming Guide
 
-- **Stefan Wagner** ([@wagiminator](https://github.com/wagiminator)) - For the incredible CH32V003 framework that makes this project possible
-- **Charles Lohr** ([@cnlohr](https://github.com/cnlohr)) - For introducing the CH32V003 to the community and developing essential tools
-- **Daniel C** ([TinyJoypad](https://www.tinyjoypad.com)) - For the original game implementations that bring retro gaming to tiny hardware
+1. Insert charged LIR2032 battery
+2. Power on using the side switch
+3. Navigate menu with direction buttons
+4. Select game with action button
+5. Controls:
+   - Tiny Tris: Left/Right to move, Up to rotate, Down for soft drop
+   - Tiny Pacman: Directional buttons to navigate, avoid ghosts!
 
-## License
-Released under GPL-3.0 License. Feel free to modify and share!
+## 🙏 Credits
+
+This project builds on the work of amazing developers:
+
+- **Stefan Wagner** ([@wagiminator](https://github.com/wagiminator)) - CH32V003 framework
+- **Charles Lohr** ([@cnlohr](https://github.com/cnlohr)) - CH32V003 tools & community support
+- **Daniel C** ([TinyJoypad](https://www.tinyjoypad.com)) - Original game implementations
+
+## 📄 License
+
+Released under GPL-3.0 License. Share, modify, and spread the joy of tiny gaming!
+
+## 🔗 Useful Links
+
+- [PlatformIO Installation](https://platformio.org/)
+- [CH32V Platform Guide](https://pio-ch32v.readthedocs.io/en/latest/installation.html)
+- [Python Installation Guide](https://www.pythontutorial.net/getting-started/install-python/)
+- [pyenv Setup](https://realpython.com/intro-to-pyenv/)
 
 ---
 
-*Part of my journey learning embedded systems and keeping arcade gaming alive, one business card at a time.*
+*Making the world a little more fun, one tiny arcade at a time! 🕹️*
