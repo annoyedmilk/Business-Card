@@ -1,6 +1,8 @@
 # Tiny Arcade Business Card
 A pocket-sized gaming console featuring Tiny Tris and Tiny Pacman, built around the powerful CH32V003 RISC-V microcontroller.
 
+![Business Card](pictures/RenderFront.png)
+
 ## What Makes It Special?
 The project combines the minimalism of a business card with the nostalgic charm of classic arcade games. At its heart lies the CH32V003, a remarkably capable RISC-V microcontroller that brings these timeless games to life on a crisp OLED display.
 
