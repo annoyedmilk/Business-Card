@@ -70,6 +70,9 @@ Turn your pocket into an arcade with this business-card-sized gaming console! Po
 ```
 ├── documentation/
 │   └── RenderFront.png    # Project preview
+├── firmware/
+│   ├── firmware.bin       # Project preview
+│   └── firmware.elf       # Project preview
 ├── hardware/
 │   ├── Gerber.zip         # PCB manufacturing files
 │   ├── BOM.csv            # Parts list
