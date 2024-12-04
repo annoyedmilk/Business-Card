@@ -1,4 +1,4 @@
-# Yet Another Tiny Arcade Business Card 🎮
+# Yet Another PCB Business Card 🎮
 
 Turn your pocket into an arcade with this business-card-sized gaming console! Powered by the CH32V003 RISC-V microcontroller, this project brings classic gaming to an ultra-portable form factor.
 
@@ -91,7 +91,7 @@ Turn your pocket into an arcade with this business-card-sized gaming console! Po
 3. Navigate menu with direction buttons
 4. Select game with action button
 5. Controls:
-   - Tiny Tris: Left/Right to move, Up to rotate, Down for soft drop
+   - Tiny Tris: Left/Right to move, Act to rotate, Down for soft drop
    - Tiny Pacman: Directional buttons to navigate, avoid ghosts!
 
 ## 🙏 Credits
