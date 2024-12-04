@@ -1,0 +1,7 @@
+# Ignore these directories
+/software/.pio
+/software/.vscode
+
+# But track specific files
+!/software/.pio/build/CH32V003/firmware.bin
+!/software/.pio/build/CH32V003/firmware.elf
