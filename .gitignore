@@ -5,3 +5,4 @@
 # But track specific files
 !/software/.pio/build/CH32V003/firmware.bin
 !/software/.pio/build/CH32V003/firmware.elf
+.DS_Store
