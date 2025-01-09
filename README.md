@@ -65,6 +65,9 @@ Turn your pocket into an arcade with this business-card-sized gaming console! Po
   - minichlink ([GitHub](https://github.com/cnlohr/ch32v003fun/tree/master/minichlink))
   - rvprog: `pip install rvprog && rvprog -f bin/<firmware>.bin`
 
+## 🔌 Power Consumption
+[See Power Mesurements](/documentation/power_measurement.md)
+
 ## 📁 Project Structure
 
 ```
