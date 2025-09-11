@@ -5,6 +5,10 @@ Turn your pocket into an arcade with this business-card-sized gaming console! Po
 ![Business Card Front](documentation/RenderFront.png)
 ![Business Card Back](documentation/RenderBack.png)
 
+## 🎮 Finished PCB in Action
+
+![Finished Business Card PCB](documentation/Business-Card.jpg)
+
 ## ✨ Features
 
 - **Ultra-Compact Design**: Fits in your wallet while packing serious gaming power
