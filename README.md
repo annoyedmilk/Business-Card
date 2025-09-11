@@ -2,7 +2,8 @@
 
 Turn your pocket into an arcade with this business-card-sized gaming console! Powered by the CH32V003 RISC-V microcontroller, this project brings classic gaming to an ultra-portable form factor.
 
-![Business Card](documentation/RenderFront.png)
+![Business Card Front](documentation/RenderFront.png)
+![Business Card Back](documentation/RenderBack.png)
 
 ## ✨ Features
 
@@ -30,18 +31,21 @@ Turn your pocket into an arcade with this business-card-sized gaming console! Po
 ### Components Needed
 
 - [ ] PCB (Gerber files provided)
-- [ ] CH32V003 microcontroller
-- [ ] 0.96" OLED display (SSD1315)
-- [ ] 5 tactile switches
-- [ ] LIR2032 battery holder
-- [ ] Additional components (See BOM.xlsx)
+- [ ] CH32V003J4M6 microcontroller
+- [ ] 0.96" OLED display (SSD1315) - X096-2864KSWAG01-H30
+- [ ] 5 tactile switches (TS11092604)
+- [ ] 1 slide switch (SK-3296S-01-L1)
+- [ ] LIR2032 battery holder (3034TR)
+- [ ] 4kHz buzzer (MLT-5030)
+- [ ] Additional components (See hardware/BOM.csv for complete list)
 
 ### Assembly Instructions
 
-1. Order PCB using provided Gerber files
-2. Gather components from BOM
-3. Follow assembly guide in documentation
-4. Install firmware using one of the methods below
+1. Order PCB using provided Gerber files (`hardware/Gerber.zip`)
+2. Gather components from BOM (`hardware/BOM.csv`)
+3. Refer to the interactive BOM for component placement (`hardware/InteractiveBOM.html`)
+4. Use pick and place file for automated assembly (`hardware/PickAndPlace.csv`)
+5. Install firmware using one of the methods below
 
 ### Firmware Installation Options
 
@@ -52,39 +56,57 @@ Turn your pocket into an arcade with this business-card-sized gaming console! Po
    - Install platform-ch32v: 
      ```bash
      pio pkg install platform-ch32v
+     ```
 2. Clone and build:
    ```bash
    git clone https://github.com/annoyedmilk/Business-Card.git
-   cd Business-Card
+   cd Business-Card/software
    pio run -t upload
    ```
 
-#### Option 2: Pre-compiled Binary
-- **Windows**: Use WCH-LinkUtility ([Download](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html))
-- **Cross-platform**: Use either:
-  - minichlink ([GitHub](https://github.com/cnlohr/ch32v003fun/tree/master/minichlink))
-  - rvprog: `pip install rvprog && rvprog -f bin/<firmware>.bin`
+#### Option 2: Cross-platform Tools
+- **minichlink**: ([GitHub](https://github.com/cnlohr/ch32v003fun/tree/master/minichlink))
+- **rvprog**: `pip install rvprog && rvprog -f <firmware>.bin`
+- **WCH-LinkUtility** (Windows): ([Download](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html))
 
 ## 🔌 Power Consumption
-[See Power Mesurements](/documentation/power_measurement.md)
+Comprehensive power analysis conducted using Nordic Power Profiler Kit II. The device operates efficiently across different modes:
+
+- **Main Menu**: 21.4mA average @ 3.6V
+- **Tetris**: 11.86mA average @ 3.6V  
+- **Pacman**: 9.58mA average @ 3.6V
+- **Buzzer**: 30-50mA average, 120mA peaks
+- **Minimum operating voltage**: 2.45V (stable), 2.4V (unstable)
+
+[See detailed power measurements](documentation/power_measurement.md)
 
 ## 📁 Project Structure
 
 ```
 ├── documentation/
-│   └── RenderFront.png    # Project preview
-├── firmware/
-│   ├── firmware.bin       # firmware as bin
-│   └── firmware.elf       # firmware as elf
+│   ├── RenderFront.png         # PCB front view
+│   ├── RenderBack.png          # PCB back view
+│   ├── current_ripple.png      # Power measurement graph
+│   └── power_measurement.md    # Detailed power analysis
 ├── hardware/
-│   ├── Gerber.zip         # PCB manufacturing files
-│   ├── BOM.csv            # Parts list
-│   └── Schematic.pdf      # Circuit diagram
+│   ├── 3D.step                 # 3D model file
+│   ├── BOM.csv                 # Bill of materials
+│   ├── Gerber.zip              # PCB manufacturing files
+│   ├── InteractiveBOM.html     # Interactive assembly guide
+│   ├── PickAndPlace.csv        # SMD placement coordinates
+│   ├── ProPrj_Business-Card.epro # EasyEDA project file
+│   └── Schematic.pdf           # Circuit schematic
 └── software/
-    ├── src/               # Source code
-    │   ├── main.c
-    │   └── ...
-    └── platformio.ini     # Build configuration
+    ├── src/                    # Source code
+    │   ├── main.c              # Main application
+    │   ├── oled_min.c/h        # OLED display driver
+    │   ├── i2c_tx.c/h          # I2C communication
+    │   ├── system.c/h          # System initialization
+    │   ├── spritebank.h        # Game sprites
+    │   └── ...                 # Additional drivers
+    ├── ld/ch32v003.ld          # Linker script
+    ├── platformio.ini          # Build configuration
+    └── COPYING.txt             # GPL license
 ```
 
 ## 🎮 Gaming Guide
