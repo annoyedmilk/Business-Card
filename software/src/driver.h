@@ -109,11 +109,9 @@ extern "C"
 // Kept for the original call site at the bottom of the Pacman loop.
 #define JOY_SLOWDOWN() frame_sync(FRAME_US_PACMAN)
 
-// OLED commands
-#define JOY_OLED_init OLED_init
+// OLED
 #define JOY_OLED_end I2C_stop
 #define JOY_OLED_send(b) I2C_write(b)
-#define JOY_OLED_send_command(c) OLED_send_command(c)
 #define JOY_OLED_data_start(y) \
   {                            \
     OLED_setpos(0, y);         \
@@ -123,9 +121,6 @@ extern "C"
 // Buttons
 #define JOY_act_pressed() (!PIN_read(PIN_ACT))
 #define JOY_act_released() (PIN_read(PIN_ACT))
-#define JOY_pad_pressed() (ADC_read() > 10)
-#define JOY_pad_released() (ADC_read() <= 10)
-#define JOY_all_released() (JOY_act_released() && JOY_pad_released())
 
   // Function declarations
   static inline uint8_t JOY_up_pressed(void);

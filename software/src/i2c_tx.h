@@ -2,22 +2,10 @@
 // Basic I2C Master Functions (write only) for CH32V003                       * v1.0 *
 // ===================================================================================
 //
-// Functions available:
-// --------------------
-// I2C_init()               Init I2C with defined clock rate (400kHz)
-// I2C_start(addr)          I2C start transmission, addr must contain R/W bit
-// I2C_write(b)             I2C transmit one data byte via I2C
-// I2C_stop()               I2C stop transmission
-//
-// I2C remap settings (set below in I2C parameters):
-// -------------------------------------------------
-// I2C_REMAP   SDA-pin  SCL-pin
-//        0      PC1      PC2
-//        1      PD0      PD1
-//        2      PC6      PC5
-//
-// External pull-up resistors (4k7 - 10k) are mandatory!
 // 2023 by Stefan Wagner:   https://github.com/wagiminator
+//
+// Write only: the OLED is never read back. Pins are fixed to PC1 (SDA) and
+// PC2 (SCL), which is how the board is wired. External pull-ups are required.
 
 #pragma once
 
@@ -28,19 +16,17 @@ extern "C"
 
 #include "ch32fun.h"
 
-// I2C Parameters
+// I2C bus clock rate.
 //
 // The display is what limits frame rate: a full 1024-byte frame is 9216 bit
-// periods, 6.9 ms at this rate. 400 kHz would cost 23 ms and cap the games
+// periods, 9.2 ms at this rate. 400 kHz would cost 23 ms and cap the games
 // near 43 fps.
 //
-// 1.2 MHz is past what the datasheet promises, but TinyJoypad drives the same
-// class of SSD1306 panel at about 1.23 Mbit/s from its bit-banged ATtiny85
-// driver, so the panels take it. Drop back to 400000 if one misbehaves.
-#define I2C_CLKRATE 1200000 // I2C bus clock rate (Hz)
-#define I2C_REMAP 0         // I2C pin remapping (see above)
+// 1 MHz is past what the datasheet promises, but it is what ch32fun uses by
+// default for this class of panel. At 24 MHz it also divides exactly:
+// CCR = 24 / (3 * 1) = 8. Drop to 400000 if a panel misbehaves.
+#define I2C_CLKRATE 1000000
 
-    // I2C Functions
     void I2C_init(void);          // I2C init function
     void I2C_start(uint8_t addr); // I2C start transmission, addr must contain R/W bit
     void I2C_write(uint8_t data); // I2C transmit one data byte via I2C
