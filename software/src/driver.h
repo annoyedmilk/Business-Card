@@ -31,12 +31,11 @@ extern "C"
 #define MENU_SOUND 3
 #define MENU_LAST MENU_SOUND
 
-// Pin assignments
+// Pin assignments. The OLED sits on PC1 (SDA) and PC2 (SCL); i2c_tx.c owns
+// those two directly.
 #define PIN_ACT PA2  // pin connected to fire button
 #define PIN_BEEP PA1 // pin connected to buzzer
 #define PIN_PAD PC4  // pin conected to direction buttons
-#define PIN_SCL PC2  // pin connected to OLED (I2C SCL)
-#define PIN_SDA PC1  // pin connected to OLED (I2C SDA)
 
 // PC4 is ADC channel 2 (see the CH32V003 pin alternate function table)
 #define PIN_PAD_ANALOG ANALOG_2

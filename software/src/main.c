@@ -33,8 +33,7 @@
 // Modified to include both Tiny Tris and Tiny Pacman by annoyedmilk: https://github.com/annoyedmilk
 // ===================================================================================
 
-#include "driver.h"
-#include "spritebank.h"
+#include "driver.h" // pulls in ch32fun, the OLED driver and spritebank.h
 
 // ===================================================================================
 // Global Variables TETRIS
@@ -99,7 +98,6 @@ uint8_t Recupe_TTRIS(uint8_t xPASS, uint8_t yPASS);
 uint8_t NEXT_BLOCK_TTRIS(uint8_t xPASS, uint8_t yPASS);
 uint8_t RECUPE_BACKGROUND_TTRIS(uint8_t xPASS, uint8_t yPASS);
 uint8_t DropPiece_TTRIS(uint8_t xPASS, uint8_t yPASS);
-uint8_t SplitSpriteDecalageY_TTRIS(uint8_t decalage, uint8_t Input, uint8_t UPorDOWN);
 uint8_t RecupeLineY_TTRIS(uint8_t Valeur);
 uint8_t RecupeDecalageY_TTRIS(uint8_t Valeur);
 void Tiny_Flip_TTRIS(uint8_t HR_TTRIS);
@@ -126,7 +124,6 @@ uint8_t LIVE;
 uint8_t INGAME;
 uint8_t Gobeactive;
 uint8_t TimerGobeactive;
-uint8_t add;
 uint8_t dotsMem[9];
 int8_t dotscount;
 uint8_t Frame;
@@ -1116,11 +1113,11 @@ uint8_t blitzSprite_TTRIS(int8_t xPos, int8_t yPos, uint8_t xPASS, uint8_t yPASS
   }
   else
   {
-    OUTBYTE = SplitSpriteDecalageY_TTRIS(SPRITEyDECALAGE, (SPRITES[ScanA + (PICBYTE)]), 1);
+    OUTBYTE = SplitSpriteDecalageY(SPRITEyDECALAGE, (SPRITES[ScanA + (PICBYTE)]), 1);
   }
   if ((SPRITEyLINE > 0))
   {
-    uint8_t OUTBYTE2 = SplitSpriteDecalageY_TTRIS(SPRITEyDECALAGE, (SPRITES[ScanB + (PICBYTE)]), 0);
+    uint8_t OUTBYTE2 = SplitSpriteDecalageY(SPRITEyDECALAGE, (SPRITES[ScanB + (PICBYTE)]), 0);
     if (ScanB > Wmax)
     {
       return OUTBYTE;
@@ -1234,15 +1231,6 @@ uint8_t DropPiece_TTRIS(uint8_t xPASS, uint8_t yPASS)
     }
   }
   return Byte_Mem;
-}
-
-uint8_t SplitSpriteDecalageY_TTRIS(uint8_t decalage, uint8_t Input, uint8_t UPorDOWN)
-{
-  if (UPorDOWN)
-  {
-    return Input << decalage;
-  }
-  return Input >> (8 - decalage);
 }
 
 uint8_t RecupeLineY_TTRIS(uint8_t Valeur)
@@ -1548,7 +1536,6 @@ void ResetVar(void)
   LIVE = 3;
   Gobeactive = 0;
   TimerGobeactive = 0;
-  add = 0;
   INGAME = 0;
   for (uint8_t t = 0; t < 9; t++)
   {
