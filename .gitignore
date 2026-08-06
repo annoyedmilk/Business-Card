@@ -1,8 +1,9 @@
-# Ignore these directories
-/software/.pio
-/software/.vscode
+# Build products
+/software/src/main.elf
+/software/src/main.bin
+/software/src/main_ext.bin
+/software/src/main.hex
+/software/src/main.lst
+/software/src/main.map
 
-# But track specific files
-!/software/.pio/build/CH32V003/firmware.bin
-!/software/.pio/build/CH32V003/firmware.elf
 .DS_Store

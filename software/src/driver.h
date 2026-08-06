@@ -2,7 +2,7 @@
 // Tiny Joypad Drivers for CH32V003                                           * v1.1 *
 // ===================================================================================
 //
-// MCU abstraction layer.
+// MCU abstraction layer, over ch32fun (https://github.com/cnlohr/ch32fun).
 // 2023 by Stefan Wagner: https://github.com/wagiminator
 // 2024 by annoyedmilk: https://github.com/annoyedmilk
 
@@ -14,8 +14,7 @@ extern "C"
 #endif
 
 #include <stdbool.h>
-#include "system.h"
-#include "gpio.h"
+#include "ch32fun.h"
 #include "oled_min.h"
 #include "spritebank.h"
 
@@ -23,6 +22,14 @@ extern "C"
 #define MENU_STATE 0
 #define TETRIS_STATE 1
 #define PACMAN_STATE 2
+#define TEST_STATE 3
+
+// Menu entries, in display order. The sound toggle is last.
+#define MENU_TETRIS 0
+#define MENU_PACMAN 1
+#define MENU_TEST 2
+#define MENU_SOUND 3
+#define MENU_LAST MENU_SOUND
 
 // Pin assignments
 #define PIN_ACT PA2  // pin connected to fire button
@@ -30,6 +37,20 @@ extern "C"
 #define PIN_PAD PC4  // pin conected to direction buttons
 #define PIN_SCL PC2  // pin connected to OLED (I2C SCL)
 #define PIN_SDA PC1  // pin connected to OLED (I2C SDA)
+
+// PC4 is ADC channel 2 (see the CH32V003 pin alternate function table)
+#define PIN_PAD_ANALOG ANALOG_2
+
+// ===================================================================================
+// Pin and timing primitives
+// ===================================================================================
+// The game code names these; ch32fun spells them differently.
+#define DLY_ms(n) Delay_Ms(n)
+#define DLY_us(n) Delay_Us(n)
+#define PIN_low(pin) funDigitalWrite((pin), FUN_LOW)
+#define PIN_high(pin) funDigitalWrite((pin), FUN_HIGH)
+#define PIN_read(pin) funDigitalRead(pin)
+#define ADC_read() ((uint16_t)funAnalogRead(PIN_PAD_ANALOG))
 
 // Joypad calibration values
 #define JOY_N 197  // joypad UP
@@ -45,8 +66,48 @@ extern "C"
 // Sound enable
 #define JOY_SOUND 1 // 0: no sound, 1: with sound
 
-// Game slow-down delay
-#define JOY_SLOWDOWN() // DLY_ms(10)
+// ===================================================================================
+// Frame pacing
+// ===================================================================================
+// Both games come from a 16 MHz ATtiny85 and carry no frame timing of their
+// own: one pass through the game loop is one step of the game, so unpaced,
+// game speed is just however fast the hardware runs.
+//
+// frame_sync() holds each pass to a fixed wall-clock period, which keeps game
+// speed independent of the system clock and of how long a frame took to draw.
+//
+// The two periods differ because the games do different work per pass: Pacman
+// redraws every pass, Tetris every seventh.
+//
+// These are calibration values, not figures measured from an ATtiny. Tune
+// them until the games feel right; larger is slower.
+#define FRAME_US_PACMAN 12000 // Pacman: one full redraw per pass
+#define FRAME_US_TETRIS 2000  // Tetris: 7 passes per redraw
+
+  // Deadline for the current frame, in free-running SysTick ticks.
+  static uint32_t frame_deadline;
+
+  // Wait until the current frame's time budget is used up, then arm the next.
+  static inline void frame_sync(uint32_t period_us)
+  {
+    uint32_t period = period_us * DELAY_US_TIME;
+    // If we overran by more than a whole period, give up on catching up and
+    // resynchronise, otherwise a slow frame makes the next few run flat out.
+    if ((int32_t)(SysTick->CNT - frame_deadline) > (int32_t)period)
+      frame_deadline = SysTick->CNT;
+    else
+      while ((int32_t)(SysTick->CNT - frame_deadline) < 0)
+        ;
+    frame_deadline += period;
+  }
+
+  static inline void frame_start(uint32_t period_us)
+  {
+    frame_deadline = SysTick->CNT + period_us * DELAY_US_TIME;
+  }
+
+// Kept for the original call site at the bottom of the Pacman loop.
+#define JOY_SLOWDOWN() frame_sync(FRAME_US_PACMAN)
 
 // OLED commands
 #define JOY_OLED_init OLED_init
@@ -83,41 +144,47 @@ extern "C"
   // Implementation of declared functions
   static inline void JOY_init(void)
   {
-    PIN_input_AN(PIN_PAD);
-    PIN_input_PU(PIN_ACT);
-    PIN_output(PIN_BEEP);
+    SystemInit(); // HSI, no PLL, no AHB division: 24 MHz
+
+    funGpioInitAll();
+
+    funPinMode(PIN_PAD, GPIO_CFGLR_IN_ANALOG);
+    funPinMode(PIN_ACT, GPIO_CFGLR_IN_PUPD);
+    PIN_high(PIN_ACT); // input pull-up: direction is chosen by the output latch
+    funPinMode(PIN_BEEP, GPIO_CFGLR_OUT_10Mhz_PP);
     PIN_high(PIN_BEEP);
+
+    funAnalogInit();
+
+    // Shortest sample time. The JOY_* thresholds above are calibrated against
+    // it; funAnalogInit() leaves every channel on a longer one.
+    ADC1->SAMPTR1 = 0;
+    ADC1->SAMPTR2 = 0;
+
     OLED_init();
-    ADC_init();
-    ADC_input(PIN_PAD);
   }
 
   static void show_startup_logo(void)
   {
-    // Fill entire screen with white first
-    for (uint8_t y = 0; y < 8; y++)
-    {
-      JOY_OLED_data_start(y);
-      for (uint8_t x = 0; x < 128; x++)
-      {
-        JOY_OLED_send(0xFF); // White background (all pixels on)
-      }
-      JOY_OLED_end();
-    }
+    // Left half stays white, right half carries the 64x64 logo. This covers
+    // every page and column, so the screen does not need clearing first.
+    const uint8_t *p = ANNOYEDMILK_RLE;
+    uint8_t run = 0, val = 0;
 
-    // Draw 64x64 logo starting at x=64 (right half of screen)
     for (uint8_t y = 0; y < 8; y++)
     {
       JOY_OLED_data_start(y);
-      // First 64 pixels remain white
       for (uint8_t x = 0; x < 64; x++)
-      {
         JOY_OLED_send(0xFF);
-      }
-      // Draw 64 pixels of logo
       for (uint8_t x = 0; x < 64; x++)
       {
-        JOY_OLED_send(ANNOYEDMILK[x + (y * 64)]);
+        if (!run) // next run-length pair
+        {
+          run = *p++;
+          val = *p++;
+        }
+        run--;
+        JOY_OLED_send(val);
       }
       JOY_OLED_end();
     }
@@ -136,241 +203,92 @@ extern "C"
     DLY_ms(100);
   }
 
-  static inline void show_menu(void)
+// ===================================================================================
+// Menu text
+// ===================================================================================
+// 5 columns per glyph, one bit per pixel, LSB = topmost pixel. Only the
+// characters the menu actually uses are here.
+#define GL_SP 0
+#define GL_COL 1
+#define GL_A 2
+#define GL_C 3
+#define GL_D 4
+#define GL_E 5
+#define GL_F 6
+#define GL_I 7
+#define GL_M 8
+#define GL_N 9
+#define GL_O 10
+#define GL_P 11
+#define GL_R 12
+#define GL_S 13
+#define GL_T 14
+#define GL_U 15
+#define GL_CUR 16
+
+  static const uint8_t FONT5[] = {
+      0x00, 0x00, 0x00, 0x00, 0x00, // space
+      0x00, 0x36, 0x36, 0x00, 0x00, // :
+      0x7E, 0x11, 0x11, 0x11, 0x7E, // A
+      0x3E, 0x41, 0x41, 0x41, 0x22, // C
+      0x7F, 0x41, 0x41, 0x41, 0x3E, // D
+      0x7F, 0x49, 0x49, 0x49, 0x41, // E
+      0x7F, 0x09, 0x09, 0x09, 0x01, // F
+      0x00, 0x41, 0x7F, 0x41, 0x00, // I
+      0x7F, 0x02, 0x0C, 0x02, 0x7F, // M
+      0x7F, 0x04, 0x08, 0x10, 0x7F, // N
+      0x3E, 0x41, 0x41, 0x41, 0x3E, // O
+      0x7F, 0x09, 0x09, 0x09, 0x06, // P
+      0x7F, 0x09, 0x19, 0x29, 0x46, // R
+      0x46, 0x49, 0x49, 0x49, 0x31, // S
+      0x01, 0x01, 0x7F, 0x01, 0x01, // T
+      0x3F, 0x40, 0x40, 0x40, 0x3F, // U
+      0x00, 0x41, 0x22, 0x14, 0x08, // > (menu cursor)
+  };
+
+  static const uint8_t STR_TETRIS[] = {GL_T, GL_E, GL_T, GL_R, GL_I, GL_S};
+  static const uint8_t STR_PACMAN[] = {GL_P, GL_A, GL_C, GL_M, GL_A, GL_N};
+  static const uint8_t STR_TEST[] = {GL_T, GL_E, GL_S, GL_T, GL_SP, GL_SP};
+  // The trailing space on ON is what erases the second F of OFF.
+  static const uint8_t STR_SND_ON[] = {GL_S, GL_O, GL_U, GL_N, GL_D, GL_COL, GL_O, GL_N, GL_SP};
+  static const uint8_t STR_SND_OFF[] = {GL_S, GL_O, GL_U, GL_N, GL_D, GL_COL, GL_O, GL_F, GL_F};
+
+  // Screen page each menu entry is drawn on.
+  static const uint8_t MENU_PAGE[] = {1, 3, 5, 7};
+
+  // Draw glyphs on a page, inverted, after `lead` blank columns.
+  static void draw_glyphs(uint8_t page, const uint8_t *str, uint8_t n, uint8_t lead)
   {
-    // Draw "TETRIS" at line 1
-    JOY_OLED_data_start(1);
-
-    // Initial space (inverted)
-    for (uint8_t i = 0; i < 6; i++)
+    JOY_OLED_data_start(page);
+    while (lead--)
+      JOY_OLED_send(~0x00);
+    while (n--)
     {
-      JOY_OLED_send(~0x00);
-    }
-
-    // T (inverted)
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x00);
-
-    // E (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x00);
-
-    // T (inverted)
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x01);
-    JOY_OLED_send(~0x00);
-
-    // R (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x09);
-    JOY_OLED_send(~0x19);
-    JOY_OLED_send(~0x29);
-    JOY_OLED_send(~0x46);
-    JOY_OLED_send(~0x00);
-
-    // I (inverted)
-    JOY_OLED_send(~0x00);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x00);
-    JOY_OLED_send(~0x00);
-
-    // S (inverted)
-    JOY_OLED_send(~0x46);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x31);
-    JOY_OLED_end();
-
-    // Draw "PACMAN" at line 3
-    JOY_OLED_data_start(3);
-
-    // Initial space (inverted)
-    for (uint8_t i = 0; i < 6; i++)
-    {
-      JOY_OLED_send(~0x00);
-    }
-
-    // P (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x09);
-    JOY_OLED_send(~0x09);
-    JOY_OLED_send(~0x09);
-    JOY_OLED_send(~0x06);
-    JOY_OLED_send(~0x00);
-
-    // A (inverted)
-    JOY_OLED_send(~0x7E);
-    JOY_OLED_send(~0x11);
-    JOY_OLED_send(~0x11);
-    JOY_OLED_send(~0x11);
-    JOY_OLED_send(~0x7E);
-    JOY_OLED_send(~0x00);
-
-    // C (inverted)
-    JOY_OLED_send(~0x3E);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x22);
-    JOY_OLED_send(~0x00);
-
-    // M (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x02);
-    JOY_OLED_send(~0x0C);
-    JOY_OLED_send(~0x02);
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x00);
-
-    // A (inverted)
-    JOY_OLED_send(~0x7E);
-    JOY_OLED_send(~0x11);
-    JOY_OLED_send(~0x11);
-    JOY_OLED_send(~0x11);
-    JOY_OLED_send(~0x7E);
-    JOY_OLED_send(~0x00);
-
-    // N (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x04);
-    JOY_OLED_send(~0x08);
-    JOY_OLED_send(~0x10);
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_end();
-
-    // Draw "SOUND: ON/OFF" at line 6
-    JOY_OLED_data_start(6);
-
-    // Initial space (inverted)
-    for (uint8_t i = 0; i < 6; i++)
-    {
-      JOY_OLED_send(~0x00);
-    }
-
-    // S (inverted)
-    JOY_OLED_send(~0x46);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x49);
-    JOY_OLED_send(~0x31);
-    JOY_OLED_send(~0x00);
-
-    // O (inverted)
-    JOY_OLED_send(~0x3E);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x3E);
-    JOY_OLED_send(~0x00);
-
-    // U (inverted)
-    JOY_OLED_send(~0x3F);
-    JOY_OLED_send(~0x40);
-    JOY_OLED_send(~0x40);
-    JOY_OLED_send(~0x40);
-    JOY_OLED_send(~0x3F);
-    JOY_OLED_send(~0x00);
-
-    // N (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x04);
-    JOY_OLED_send(~0x08);
-    JOY_OLED_send(~0x10);
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x00);
-
-    // D (inverted)
-    JOY_OLED_send(~0x7F);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x41);
-    JOY_OLED_send(~0x3E);
-    JOY_OLED_send(~0x00);
-
-    // : (inverted)
-    JOY_OLED_send(~0x00);
-    JOY_OLED_send(~0x36);
-    JOY_OLED_send(~0x36);
-    JOY_OLED_send(~0x00);
-    JOY_OLED_send(~0x00);
-    JOY_OLED_send(~0x00);
-
-    // Display ON or OFF based on sound_enabled
-    if (sound_enabled)
-    {
-      // ON
-      // O (inverted)
-      JOY_OLED_send(~0x3E);
-      JOY_OLED_send(~0x41);
-      JOY_OLED_send(~0x41);
-      JOY_OLED_send(~0x41);
-      JOY_OLED_send(~0x3E);
-      JOY_OLED_send(~0x00);
-
-      // N (inverted)
-      JOY_OLED_send(~0x7F);
-      JOY_OLED_send(~0x04);
-      JOY_OLED_send(~0x08);
-      JOY_OLED_send(~0x10);
-      JOY_OLED_send(~0x7F);
-      JOY_OLED_send(~0x00);
-
-      // Extra spaces to clear the second F from OFF
-      JOY_OLED_send(~0x00);
-      JOY_OLED_send(~0x00);
-      JOY_OLED_send(~0x00);
-      JOY_OLED_send(~0x00);
-      JOY_OLED_send(~0x00);
-      JOY_OLED_send(~0x00);
-    }
-    else
-    {
-      // OFF
-      // O (inverted)
-      JOY_OLED_send(~0x3E);
-      JOY_OLED_send(~0x41);
-      JOY_OLED_send(~0x41);
-      JOY_OLED_send(~0x41);
-      JOY_OLED_send(~0x3E);
-      JOY_OLED_send(~0x00);
-
-      // F (inverted)
-      JOY_OLED_send(~0x7F);
-      JOY_OLED_send(~0x09);
-      JOY_OLED_send(~0x09);
-      JOY_OLED_send(~0x09);
-      JOY_OLED_send(~0x01);
-      JOY_OLED_send(~0x00);
-
-      // F (inverted)
-      JOY_OLED_send(~0x7F);
-      JOY_OLED_send(~0x09);
-      JOY_OLED_send(~0x09);
-      JOY_OLED_send(~0x09);
-      JOY_OLED_send(~0x01);
-      JOY_OLED_send(~0x00);
+      const uint8_t *g = &FONT5[(*str++) * 5];
+      for (uint8_t i = 0; i < 5; i++)
+        JOY_OLED_send(~*g++);
+      JOY_OLED_send(~0x00); // inter-character gap
     }
     JOY_OLED_end();
   }
 
+  static inline void show_menu(void)
+  {
+    draw_glyphs(MENU_PAGE[MENU_TETRIS], STR_TETRIS, 6, 6);
+    draw_glyphs(MENU_PAGE[MENU_PACMAN], STR_PACMAN, 6, 6);
+    draw_glyphs(MENU_PAGE[MENU_TEST], STR_TEST, 6, 6);
+    draw_glyphs(MENU_PAGE[MENU_SOUND], sound_enabled ? STR_SND_ON : STR_SND_OFF, 9, 6);
+  }
+
+  // Menu selection, and the selection the screen currently shows. 255 means
+  // the menu needs repainting; game exit paths set it via menu_invalidate()
+  // so the next handle_menu() pass redraws both text and cursor.
+  static uint8_t menu_position = 0;
+  static uint8_t menu_drawn = 255;
+#define menu_invalidate() (menu_drawn = 255)
+
   static inline void handle_menu(uint8_t *game_state, uint8_t *current_game)
   {
-    static uint8_t menu_position = 0;
-    static uint8_t prev_position = 255; // Initialize to invalid position to force first draw
     bool needsRedraw = false;
 
     // Handle menu navigation
@@ -382,7 +300,7 @@ extern "C"
       DLY_ms(200);
     }
 
-    if (JOY_down_pressed() && menu_position < 2)
+    if (JOY_down_pressed() && menu_position < MENU_LAST)
     {
       menu_position++;
       if (sound_enabled)
@@ -392,44 +310,40 @@ extern "C"
 
     if (JOY_act_pressed())
     {
-      if (menu_position < 2)
-      {
-        if (sound_enabled)
-          JOY_sound(20, 150);
-        JOY_sound(100, 150);
-        DLY_ms(200);
-        *current_game = menu_position;
-        *game_state = (menu_position == 0) ? TETRIS_STATE : PACMAN_STATE;
-      }
-      else
+      // Toggle before the confirmation tone, so switching sound on is audible
+      // and switching it off is silent.
+      if (menu_position == MENU_SOUND)
       {
         sound_enabled = !sound_enabled;
-        if (sound_enabled)
-          JOY_sound(20, 150);
-        JOY_sound(100, 150);
         needsRedraw = true;
-        DLY_ms(200);
+      }
+
+      if (sound_enabled)
+        JOY_sound(20, 150);
+      JOY_sound(100, 150);
+      DLY_ms(200);
+
+      if (menu_position != MENU_SOUND)
+      {
+        *current_game = menu_position;
+        *game_state = (menu_position == MENU_TETRIS)   ? TETRIS_STATE
+                      : (menu_position == MENU_PACMAN) ? PACMAN_STATE
+                                                       : TEST_STATE;
       }
     }
 
     // Only redraw if position changed or update needed
-    if (needsRedraw || prev_position != menu_position)
+    if (needsRedraw || menu_drawn != menu_position)
     {
       show_menu();
 
-      // Draw cursor for current selection (adjusted for new menu layout)
-      JOY_OLED_data_start(menu_position == 0 ? 1 : menu_position == 1 ? 3
-                                                                      : 6);
+      // Cursor for the current selection. The glyph occupies columns 0-4,
+      // inside the 6 blank columns the text is indented by, so it cannot
+      // collide with a letter.
+      static const uint8_t STR_CUR[] = {GL_CUR};
+      draw_glyphs(MENU_PAGE[menu_position], STR_CUR, 1, 0);
 
-      // Draw inverted '>' cursor bitmap
-      JOY_OLED_send(~0x00); // Inverted space
-      JOY_OLED_send(~0x41); // Inverted >
-      JOY_OLED_send(~0x22);
-      JOY_OLED_send(~0x14);
-      JOY_OLED_send(~0x08);
-      JOY_OLED_end();
-
-      prev_position = menu_position;
+      menu_drawn = menu_position;
     }
   }
 
@@ -461,7 +375,7 @@ extern "C"
   void JOY_sound(uint8_t freq, uint8_t dur)
   {
     if (!sound_enabled)
-      return; // Add this line
+      return;
     while (dur--)
     {
 #if JOY_SOUND == 1
@@ -475,7 +389,7 @@ extern "C"
   }
 
   // Pseudo random number generator
-  uint16_t rnval = 0xACE1;
+  static uint16_t rnval = 0xACE1;
   uint16_t JOY_random(void)
   {
     rnval = (rnval >> 0x01) ^ (-(rnval & 0x01) & 0xB400);
@@ -484,10 +398,6 @@ extern "C"
 
 // Delays
 #define JOY_DLY_ms DLY_ms
-#define JOY_DLY_us DLY_us
-
-// Additional Defines
-#define abs(n) ((n >= 0) ? (n) : (-(n)))
 
   long map(long x, long in_min, long in_max, long out_min, long out_max)
   {

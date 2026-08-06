@@ -26,11 +26,19 @@ extern "C"
 {
 #endif
 
-#include "ch32v003.h"
+#include "ch32fun.h"
 
 // I2C Parameters
-#define I2C_CLKRATE 400000 // I2C bus clock rate (Hz)
-#define I2C_REMAP 0        // I2C pin remapping (see above)
+//
+// The display is what limits frame rate: a full 1024-byte frame is 9216 bit
+// periods, 6.9 ms at this rate. 400 kHz would cost 23 ms and cap the games
+// near 43 fps.
+//
+// 1.2 MHz is past what the datasheet promises, but TinyJoypad drives the same
+// class of SSD1306 panel at about 1.23 Mbit/s from its bit-banged ATtiny85
+// driver, so the panels take it. Drop back to 400000 if one misbehaves.
+#define I2C_CLKRATE 1200000 // I2C bus clock rate (Hz)
+#define I2C_REMAP 0         // I2C pin remapping (see above)
 
     // I2C Functions
     void I2C_init(void);          // I2C init function

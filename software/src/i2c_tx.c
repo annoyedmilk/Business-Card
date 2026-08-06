@@ -41,11 +41,12 @@ void I2C_init(void)
 #warning Wrong I2C REMAP
 #endif
 
-  // Set I2C module clock frequency (in MHz)
-  I2C1->CTLR2 = 4;
+  // APB1 clock in MHz. The peripheral derives its bus timing from this, so it
+  // must match the real clock or the resulting SCL rate is wrong.
+  I2C1->CTLR2 = FUNCONF_SYSTEM_CORE_CLOCK / 1000000;
 
   // Set bus clock configuration
-  I2C1->CKCFGR = (F_CPU / (3 * I2C_CLKRATE)) | I2C_CKCFGR_FS;
+  I2C1->CKCFGR = (FUNCONF_SYSTEM_CORE_CLOCK / (3 * I2C_CLKRATE)) | I2C_CKCFGR_FS;
 
   // Enable I2C
   I2C1->CTLR1 = I2C_CTLR1_PE;

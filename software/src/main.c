@@ -116,7 +116,6 @@ void recupe_HIGHSCORE_TTRIS(void);
 void Reset_Value_TTRIS(void);
 void save_HIGHSCORE_TTRIS(void);
 void Check_NEW_RECORD(void);
-uint8_t checksum(uint8_t Byte_);
 
 // ===================================================================================
 // Global Variables PACMAN
@@ -159,6 +158,7 @@ uint8_t SplitSpriteDecalageY(uint8_t decalage, uint8_t Input, uint8_t UPorDOWN);
 uint8_t SpriteWrite(uint8_t x, uint8_t y, PERSONAGE *Sprite);
 uint8_t return_if_sprite_present(uint8_t x, PERSONAGE *Sprite, uint8_t SpriteNumber);
 uint8_t background(uint8_t x, uint8_t y);
+uint8_t dots_at(uint8_t x, uint8_t y);
 
 // ===================================================================================
 // Global Variables
@@ -170,6 +170,7 @@ uint8_t sound_enabled = 1;
 // ===================================================================================
 static void handle_tetris_game(uint8_t *state);
 static void handle_pacman_game(uint8_t *state);
+static void handle_test_mode(uint8_t *state);
 
 // ===================================================================================
 // Main Function
@@ -181,11 +182,11 @@ int main(void)
   uint8_t state = MENU_STATE;
   uint8_t current_game = 0;
 
-  // Show startup logo and menu
+  // Show startup logo; handle_menu() paints the menu over it on its first
+  // pass through the main loop.
   show_startup_logo();
   JOY_DLY_ms(1000);
   play_start_jingle();
-  show_menu();
 
   // Main Game Loop
   while (1)
@@ -203,6 +204,10 @@ int main(void)
     case PACMAN_STATE:
       handle_pacman_game(&state);
       break;
+
+    case TEST_STATE:
+      handle_test_mode(&state);
+      break;
     }
   }
 }
@@ -210,6 +215,15 @@ int main(void)
 static void handle_tetris_game(uint8_t *state)
 {
   Reset_Value_TTRIS();
+
+  // As on the original: holding DOWN while Tetris starts clears the stored
+  // high score (the globals were just zeroed, so this saves zeros).
+  if (JOY_down_pressed())
+  {
+    DLY_ms(1000);
+    if (JOY_down_pressed())
+      save_HIGHSCORE_TTRIS();
+  }
 
   while (*state == TETRIS_STATE)
   {
@@ -228,6 +242,7 @@ static void handle_tetris_game(uint8_t *state)
     // Set initial position
     xx_TTRIS = 55;
     yy_TTRIS = 5;
+    frame_start(FRAME_US_TETRIS);
 
     // Game loop
     while (*state == TETRIS_STATE)
@@ -272,6 +287,8 @@ static void handle_tetris_game(uint8_t *state)
       {
         SKIP_FRAME++;
       }
+
+      frame_sync(FRAME_US_TETRIS);
     }
   }
 }
@@ -285,6 +302,7 @@ static void handle_pacman_game(uint8_t *state)
   {
     ResetVar();
     LIVE = 3;
+    frame_start(FRAME_US_PACMAN);
 
     while (*state == PACMAN_STATE)
     {
@@ -405,7 +423,7 @@ static void handle_pacman_game(uint8_t *state)
           else
           {
             show_startup_logo();
-            show_menu();
+            menu_invalidate();
             *state = MENU_STATE;
             break;
           }
@@ -1404,77 +1422,58 @@ void INIT_ALL_VAR_TTRIS(void)
   DEPLACEMENT_YY_TTRIS = 0;
 }
 
-#define Number_of_Backup 4
+// ===================================================================================
+// High score persistence
+// ===================================================================================
+// The ATtiny85 original kept the record in EEPROM. The CH32V003 has none, so
+// the record lives in the last 64-byte page of flash, which ld/ch32v003.ld
+// excludes from the image. As on the original, the title screen shows the
+// record, a game over that beats it saves it, and holding DOWN when entering
+// Tetris clears it.
+//
+// A save erases and rewrites the page (about 6 ms, only on a new record). The
+// core stalls on flash access while that runs; nothing here is timing
+// critical at that moment.
+
+#define HISCORE_ADDR 0x08003FC0 // last 64-byte page, outside the image
+#define HISCORE_MAGIC 0x5AA5
+
+typedef struct
+{
+  uint16_t magic;
+  uint16_t score;
+  uint16_t lines;
+  uint8_t level;
+  uint8_t sum; // byte sum of the seven bytes above
+} HISCORE; // 8 bytes, no padding
+
+static uint8_t hiscore_sum(const HISCORE *h)
+{
+  const uint8_t *p = (const uint8_t *)h;
+  uint8_t s = 0;
+  for (uint8_t i = 0; i < 7; i++)
+    s += p[i];
+  return s;
+}
+
+static uint8_t hiscore_valid(const HISCORE *h)
+{
+  return h->magic == HISCORE_MAGIC && hiscore_sum(h) == h->sum;
+}
 
 void recupe_HIGHSCORE_TTRIS(void)
 {
-  /*
-  uint8_t RESAVE=0;
-  uint8_t t;
-
-  uint8_t Level_SUM[Number_of_Backup]={0};
-  uint8_t line_SUM[Number_of_Backup]={0};
-  uint8_t Scores_SUM[Number_of_Backup]={0};
-
-  //recupe data eeprom
-  #define Level_(tt) EEPROM.read(1+(tt*10))
-  #define line_A(tt) EEPROM.read(2+(tt*10))
-  #define line_B(tt) EEPROM.read(3+(tt*10))
-  #define Scores_A(tt) EEPROM.read(4+(tt*10))
-  #define Scores_B(tt) EEPROM.read(5+(tt*10))
-
-  for (t=0;t<Number_of_Backup;t++){
-  Level_SUM[t]=EEPROM.read(7+(t*10));
-  line_SUM[t]=EEPROM.read(8+(t*10));
-  Scores_SUM[t]=EEPROM.read(9+(t*10));
+  const HISCORE *h = (const HISCORE *)HISCORE_ADDR;
+  if (hiscore_valid(h))
+  {
+    Level_TTRIS = h->level;
+    Nb_of_line_F_TTRIS = h->lines;
+    Scores_TTRIS = h->score;
   }
-  //fin
-
-  //SUM check
-  for (t=0;t<Number_of_Backup;t++){
-  if ((checksum(Level_(t)))!=(Level_SUM[t])) {Level_SUM[t]=255;RESAVE=1;}
-  if ((checksum(line_A(t))+checksum(line_B(t)))!=(line_SUM[t])) {line_SUM[t]=255;RESAVE=1;}
-  if ((checksum(Scores_A(t))+checksum(Scores_B(t)))!=(Scores_SUM[t])) {Scores_SUM[t]=255;RESAVE=1;}
+  else
+  {
+    Reset_Value_TTRIS();
   }
-  //SUM check fin
-
-  //Get Level
-  for (t=0;t<Number_of_Backup;t++){
-  if (Level_SUM[t]!=255) {
-  Level_TTRIS=Level_(t);
-    goto Next_2;}
-  }
-  goto ED;
-  Next_2:;
-  //get level fin
-
-  //Get Lines
-  for (t=0;t<Number_of_Backup;t++){
-  if (line_SUM[t]!=255) {
-  Nb_of_line_F_TTRIS=uint16_t (line_A(t)<<8);
-  Nb_of_line_F_TTRIS|=uint16_t (line_B(t));
-  goto Next_3;}
-  }
-  goto ED;
-  Next_3:;
-  //get Lines fin
-
-  //Get Scores
-  for (t=0;t<Number_of_Backup;t++){
-  if (Scores_SUM[t]!=255) {
-  Scores_TTRIS=uint16_t (Scores_A(t)<<8);
-  Scores_TTRIS|=uint16_t (Scores_B(t));
-  goto Next_4;}
-  }
-  goto ED;
-  //get Scores fin
-
-  ED:;
-  Reset_Value_TTRIS();
-  Next_4:;
-  if (RESAVE) {save_HIGHSCORE_TTRIS();} //resave if sumcheck not pass
-  */
-  Reset_Value_TTRIS();
 }
 
 void Reset_Value_TTRIS(void)
@@ -1486,47 +1485,57 @@ void Reset_Value_TTRIS(void)
 
 void save_HIGHSCORE_TTRIS(void)
 {
-  /*
-  uint8_t LEVEL_=Level_TTRIS&0xff;
-  uint8_t LINE_0=(Nb_of_line_F_TTRIS>>8) & 0xFF;
-  uint8_t LINE_1=Nb_of_line_F_TTRIS&0xff;
-  uint8_t Scores_0=(Scores_TTRIS>>8) & 0xFF;
-  uint8_t Scores_1=Scores_TTRIS&0xff;
-  uint8_t t;
-  for (t=0;t<Number_of_Backup;t++){
-  EEPROM.write(1+(t*10),LEVEL_);
-  EEPROM.write(2+(t*10),LINE_0);
-  EEPROM.write(3+(t*10),LINE_1);
-  EEPROM.write(4+(t*10),Scores_0);
-  EEPROM.write(5+(t*10),Scores_1);
-  EEPROM.write(7+(t*10),checksum(LEVEL_));
-  EEPROM.write(8+(t*10),(checksum(LINE_0)+checksum(LINE_1)));
-  EEPROM.write(9+(t*10),(checksum(Scores_0)+checksum(Scores_1)));
+  union
+  {
+    HISCORE h;
+    uint32_t w[2];
+  } rec;
+  rec.h.magic = HISCORE_MAGIC;
+  rec.h.score = Scores_TTRIS;
+  rec.h.lines = Nb_of_line_F_TTRIS;
+  rec.h.level = Level_TTRIS;
+  rec.h.sum = hiscore_sum(&rec.h);
+
+  volatile uint32_t *dst = (volatile uint32_t *)HISCORE_ADDR;
+
+  // Unlock the flash and fast-mode programming
+  FLASH->KEYR = FLASH_KEY1;
+  FLASH->KEYR = FLASH_KEY2;
+  FLASH->MODEKEYR = FLASH_KEY1;
+  FLASH->MODEKEYR = FLASH_KEY2;
+
+  // Erase the 64-byte page
+  FLASH->CTLR = CR_PAGE_ER;
+  FLASH->ADDR = (uint32_t)dst;
+  FLASH->CTLR = CR_STRT_Set | CR_PAGE_ER;
+  while (FLASH->STATR & FLASH_STATR_BSY)
+    ;
+
+  // Program it: the record in the first two words, erased state after
+  FLASH->CTLR = CR_PAGE_PG;
+  FLASH->CTLR = CR_BUF_RST | CR_PAGE_PG;
+  FLASH->ADDR = (uint32_t)dst;
+  while (FLASH->STATR & FLASH_STATR_BSY)
+    ;
+  for (uint8_t i = 0; i < 16; i++)
+  {
+    dst[i] = (i < 2) ? rec.w[i] : 0xFFFFFFFF;
+    FLASH->CTLR = CR_PAGE_PG | FLASH_CTLR_BUF_LOAD;
+    while (FLASH->STATR & FLASH_STATR_BSY)
+      ;
   }
-  */
+  FLASH->CTLR = CR_PAGE_PG | CR_STRT_Set;
+  while (FLASH->STATR & FLASH_STATR_BSY)
+    ;
+
+  FLASH->CTLR = CR_LOCK_Set; // lock again
 }
 
 void Check_NEW_RECORD(void)
 {
-  /*
-  if (Scores_TTRIS>uint16_t((EEPROM.read(4)<<8)|(EEPROM.read(5)))) {
-  save_HIGHSCORE_TTRIS();
-  }
-  */
-}
-
-uint8_t checksum(uint8_t Byte_)
-{
-  uint8_t Total_ = 0;
-  uint8_t t = 0;
-  for (t = 0; t < 8; t++)
-  {
-    if ((Byte_) & (0b00000001 << t))
-    {
-      Total_++;
-    }
-  }
-  return Total_;
+  const HISCORE *h = (const HISCORE *)HISCORE_ADDR;
+  if (!hiscore_valid(h) || Scores_TTRIS > h->score)
+    save_HIGHSCORE_TTRIS();
 }
 
 // ===================================================================================
@@ -2007,7 +2016,7 @@ uint8_t LiveWrite(uint8_t x, uint8_t y)
 uint8_t DotsWrite(uint8_t x, uint8_t y, PERSONAGE *Sprite)
 {
   uint8_t Menreturn = 0;
-  uint8_t mem1 = (dots[x + (128 * y)]);
+  uint8_t mem1 = dots_at(x, y);
   if (mem1 != 0b00000000)
   {
     dotscount++;
@@ -2197,7 +2206,136 @@ uint8_t return_if_sprite_present(uint8_t x, PERSONAGE *Sprite, uint8_t SpriteNum
   return 0;
 }
 
+// BackBlitz and the dot layout are held compressed (see spritebank.h) and
+// expanded a row at a time into RAM. The renderer finishes a row before
+// moving on, so each row is rebuilt once per frame.
+static uint8_t bb_row[128];
+static uint8_t dots_row[128];
+static uint8_t bb_row_y = 0xFF;
+static uint8_t dots_row_y = 0xFF;
+
 uint8_t background(uint8_t x, uint8_t y)
 {
-  return (BackBlitz[((y) * 128) + ((x))]);
+  if (y != bb_row_y)
+  {
+    const uint8_t *src = &back[y * 128];
+    for (uint8_t i = 0; i < 128; i++)
+      bb_row[i] = src[i];
+    for (uint8_t i = BB_DELTA_ROW[y]; i < BB_DELTA_ROW[y + 1]; i++)
+      bb_row[BB_DELTA[i * 2]] = BB_DELTA[i * 2 + 1];
+    bb_row_y = y;
+  }
+  return bb_row[x];
+}
+
+uint8_t dots_at(uint8_t x, uint8_t y)
+{
+  if (y != dots_row_y)
+  {
+    for (uint8_t i = 0; i < 128; i++)
+      dots_row[i] = 0;
+    for (uint8_t i = DOTS_ROW[y]; i < DOTS_ROW[y + 1]; i++)
+      dots_row[DOTS[i * 2]] = DOTS[i * 2 + 1];
+    dots_row_y = y;
+  }
+  return dots_row[x];
+}
+
+// ===================================================================================
+// Joypad test mode
+// ===================================================================================
+// Port of the TinyJoypad TESTMODE tool by Daniel C. Draws a fixed test screen
+// with a marker that follows the direction pad and a button indicator that
+// lights while the action button is held.
+//
+// Hold the action button for TEST_EXIT_FRAMES consecutive frames to leave.
+#define TEST_EXIT_FRAMES 50
+
+static uint8_t joytest_row[128];
+static uint8_t joytest_row_y = 0xFF;
+
+// Expand one run-length encoded row of the test screen.
+static uint8_t joytest_at(uint8_t x, uint8_t y)
+{
+  if (y != joytest_row_y)
+  {
+    uint8_t p = 0;
+    for (uint16_t i = JOYTEST_ROW[y]; i < JOYTEST_ROW[y + 1]; i++)
+    {
+      uint8_t run = JOYTEST_RLE[i * 2];
+      uint8_t val = JOYTEST_RLE[i * 2 + 1];
+      while (run--)
+        joytest_row[p++] = val;
+    }
+    joytest_row_y = y;
+  }
+  return joytest_row[x];
+}
+
+static void handle_test_mode(uint8_t *state)
+{
+  uint8_t x_joy = 29, y_joy = 30;
+  uint8_t held = 0;
+
+  // Rising sweep, same as the original, doubles as a buzzer check.
+  for (uint8_t t = 2; t < 250; t++)
+    JOY_sound(t, 1);
+
+  frame_start(FRAME_US_PACMAN);
+
+  while (*state == TEST_STATE)
+  {
+    uint8_t act = JOY_act_pressed();
+
+    // The marker springs back to centre when nothing is pressed, so a stuck
+    // reading shows up as a marker that will not return.
+    if (JOY_right_pressed())
+      x_joy = (x_joy < 47) ? x_joy + 6 : 47;
+    else if (JOY_left_pressed())
+      x_joy = (x_joy > 11) ? x_joy - 6 : 11;
+    else
+    {
+      if (x_joy < 29)
+        x_joy += 6;
+      if (x_joy > 29)
+        x_joy -= 6;
+    }
+
+    if (JOY_down_pressed())
+      y_joy = (y_joy < 48) ? y_joy + 6 : 48;
+    else if (JOY_up_pressed())
+      y_joy = (y_joy > 12) ? y_joy - 6 : 12;
+    else
+    {
+      if (y_joy < 30)
+        y_joy += 6;
+      if (y_joy > 30)
+        y_joy -= 6;
+    }
+
+    for (uint8_t y = 0; y < 8; y++)
+    {
+      JOY_OLED_data_start(y);
+      for (uint8_t x = 0; x < 128; x++)
+      {
+        uint8_t marker = blitzSprite_TTRIS(x_joy, y_joy, x, y, 0, Joy);
+        uint8_t button = act ? (0xFF - blitzSprite_TTRIS(97, 20, x, y, 0, boutton)) : 0xFF;
+        JOY_OLED_send(marker | (joytest_at(x, y) & button));
+      }
+      JOY_OLED_end();
+    }
+
+    held = act ? held + 1 : 0;
+    if (held >= TEST_EXIT_FRAMES)
+    {
+      JOY_sound(100, 150);
+      while (JOY_act_pressed()) // do not carry the press into the menu
+        ;
+      show_startup_logo();
+      menu_invalidate();
+      *state = MENU_STATE;
+    }
+
+    frame_sync(FRAME_US_PACMAN);
+  }
 }

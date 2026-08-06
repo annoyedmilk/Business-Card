@@ -1,147 +1,99 @@
-# Yet Another PCB Business Card 🎮
+# Business Card
 
-Turn your pocket into an arcade with this business-card-sized gaming console! Powered by the CH32V003 RISC-V microcontroller, this project brings classic gaming to an ultra-portable form factor.
+A business-card-sized handheld games console built around the CH32V003
+RISC-V microcontroller: a 0.96" I2C OLED, five buttons, a piezo buzzer
+and a rechargeable LIR2032 coin cell. It runs Tiny Tris, Tiny Pacman and
+a hardware test mode, ported from the TinyJoypad project.
 
-![Business Card Front](documentation/RenderFront.png)
-![Business Card Back](documentation/RenderBack.png)
+![Front](documentation/RenderFront.png)
+![Back](documentation/RenderBack.png)
+![Assembled board](documentation/Business-Card.jpg)
 
-## 🎮 Finished PCB in Action
+Hardware and firmware are released under GPL-3.0. See `LICENSE`.
 
-![Finished Business Card PCB](documentation/Business-Card.jpg)
+## Hardware
 
-## ✨ Features
+| Function     | Part                    | Notes                                         |
+| ------------ | ----------------------- | --------------------------------------------- |
+| MCU          | CH32V003J4M6            | RV32EC, 16K flash, 2K SRAM, SOP-8             |
+| Display      | X096-2864KSWAG01-H30    | 0.96" 128x64 OLED, SSD1315, I2C               |
+| Buttons      | 5x TS11092604           | 4 directions on a resistor ladder, 1 action   |
+| Audio        | MLT-5030                | Piezo buzzer                                  |
+| Power        | 3034TR holder + LIR2032 | Rechargeable coin cell, SK-3296S slide switch |
 
-- **Ultra-Compact Design**: Fits in your wallet while packing serious gaming power
-- **Powerful Brain**: Built around the CH32V003 RISC-V microcontroller
-- **Crystal Clear Display**: 0.96" OLED screen (SSD1315) for crisp visuals
-- **Long-lasting Power**: Rechargeable LIR2032 battery
-- **Intuitive Controls**: 5 tactile buttons for precise gaming input
-- **Open Source**: Full hardware and software documentation available
+The SOP-8 package leaves few pins: PA1 buzzer, PA2 action button, PC1/PC2
+OLED I2C, PC4 direction buttons (ADC ladder).
 
-## 🎯 Games Library
+`hardware/` contains the EasyEDA project, schematic PDF, Gerbers, BOM,
+pick-and-place data, an interactive BOM and a STEP model. To build a
+board, send `Gerber.zip` to a fabricator and order the parts in
+`BOM.csv`.
 
-### Tiny Tris
-- Classic block-falling gameplay
-- Increasing difficulty levels
-- Score tracking
+## Firmware
 
-### Tiny Pacman
-- Authentic maze navigation
-- Ghost AI patterns
-- Power pellets and scoring system
+Bare-metal C on [ch32fun](https://github.com/cnlohr/ch32fun), vendored
+as a submodule. No vendor SDK.
 
-## 🛠️ Build Your Own
+    software/
+      Makefile            Build configuration
+      funconfig.h         ch32fun configuration (clock, SysTick)
+      ld/ch32v003.ld      Linker script; reserves the high-score flash page
+      ch32fun/            Submodule
+      src/
+        main.c            Menu, Tiny Tris, Tiny Pacman, test mode
+        driver.h          Joypad, display and frame pacing layer
+        i2c_tx.c/.h       Transmit-only I2C master
+        oled_min.c/.h     Minimal SSD1315 driver
+        spritebank.h      Sprite and bitmap data
 
-### Components Needed
+The core runs at 24 MHz and the I2C bus at 1.2 MHz; game speed is fixed
+independently of both by `frame_sync()` in `driver.h`. Rationale for the
+clocking, pacing and data compression choices is commented where each
+lives (`funconfig.h`, `driver.h`, `spritebank.h`).
 
-- [ ] PCB (Gerber files provided)
-- [ ] CH32V003J4M6 microcontroller
-- [ ] 0.96" OLED display (SSD1315) - X096-2864KSWAG01-H30
-- [ ] 5 tactile switches (TS11092604)
-- [ ] 1 slide switch (SK-3296S-01-L1)
-- [ ] LIR2032 battery holder (3034TR)
-- [ ] 4kHz buzzer (MLT-5030)
-- [ ] Additional components (See hardware/BOM.csv for complete list)
+### Build
 
-### Assembly Instructions
+    git submodule update --init
+    cd software
+    make
 
-1. Order PCB using provided Gerber files (`hardware/Gerber.zip`)
-2. Gather components from BOM (`hardware/BOM.csv`)
-3. Refer to the interactive BOM for component placement (`hardware/InteractiveBOM.html`)
-4. Use pick and place file for automated assembly (`hardware/PickAndPlace.csv`)
-5. Install firmware using one of the methods below
+Needs GNU Make and a RISC-V GCC on `PATH`; the
+[xPack riscv-none-elf-gcc](https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases)
+works without an installer (on Windows, unpack it to a short path).
+Output: `software/src/main.bin`.
 
-### Firmware Installation Options
+### Flash
 
-#### Option 1: PlatformIO (Recommended)
-1. Install required tools:
-   - Install [Python 3.x](https://www.python.org/downloads/)
-   - Install [PlatformIO IDE](https://platformio.org/install/ide?install=vscode)
-   - Install platform-ch32v: 
-     ```bash
-     pio pkg install platform-ch32v
-     ```
-2. Clone and build:
-   ```bash
-   git clone https://github.com/annoyedmilk/Business-Card.git
-   cd Business-Card/software
-   pio run -t upload
-   ```
+    make flash
 
-#### Option 2: Cross-platform Tools
-- **minichlink**: ([GitHub](https://github.com/cnlohr/ch32v003fun/tree/master/minichlink))
-- **rvprog**: `pip install rvprog && rvprog -f <firmware>.bin`
-- **WCH-LinkUtility** (Windows): ([Download](https://www.wch.cn/downloads/WCH-LinkUtility_ZIP.html))
+drives a WCH-LinkE via the bundled minichlink. On Windows, minichlink
+needs the WinUSB driver on WCH-Link interface 0 (installable with
+[Zadig](https://zadig.akeo.ie/)); alternatively flash `main.bin` with
+WCH-LinkUtility using the stock driver.
 
-## 🔌 Power Consumption
-Comprehensive power analysis conducted using Nordic Power Profiler Kit II. The device operates efficiently across different modes:
+## Usage
 
-- **Main Menu**: 21.4mA average @ 3.6V
-- **Tetris**: 11.86mA average @ 3.6V  
-- **Pacman**: 9.58mA average @ 3.6V
-- **Buzzer**: 30-50mA average, 120mA peaks
-- **Minimum operating voltage**: 2.45V (stable), 2.4V (unstable)
+Fit a charged LIR2032 and switch on. Directions move through the menu,
+the action button selects: Tiny Tris, Pacman, test mode, sound toggle.
 
-[See detailed power measurements](documentation/power_measurement.md)
+- Tiny Tris: left/right move, action rotates, down soft-drops.
+- Pacman: directions steer.
+- Test mode: for board bring-up. A marker follows the direction pad and
+  springs back to centre on release, an indicator lights while action is
+  held, and a tone sweep on entry checks the buzzer. Hold action for
+  about a second to exit.
 
-## 📁 Project Structure
+The Tiny Tris high score survives power-off: it is kept in the last
+64-byte page of flash, which the linker script keeps out of the image.
+The title screen shows the record; beating it at game over saves it.
+Holding down while Tetris starts clears it.
 
-```
-├── documentation/
-│   ├── RenderFront.png         # PCB front view
-│   ├── RenderBack.png          # PCB back view
-│   ├── current_ripple.png      # Power measurement graph
-│   └── power_measurement.md    # Detailed power analysis
-├── hardware/
-│   ├── 3D.step                 # 3D model file
-│   ├── BOM.csv                 # Bill of materials
-│   ├── Gerber.zip              # PCB manufacturing files
-│   ├── InteractiveBOM.html     # Interactive assembly guide
-│   ├── PickAndPlace.csv        # SMD placement coordinates
-│   ├── ProPrj_Business-Card.epro # EasyEDA project file
-│   └── Schematic.pdf           # Circuit schematic
-└── software/
-    ├── src/                    # Source code
-    │   ├── main.c              # Main application
-    │   ├── oled_min.c/h        # OLED display driver
-    │   ├── i2c_tx.c/h          # I2C communication
-    │   ├── system.c/h          # System initialization
-    │   ├── spritebank.h        # Game sprites
-    │   └── ...                 # Additional drivers
-    ├── ld/ch32v003.ld          # Linker script
-    ├── platformio.ini          # Build configuration
-    └── COPYING.txt             # GPL license
-```
+## Credits
 
-## 🎮 Gaming Guide
-
-1. Insert charged LIR2032 battery
-2. Power on using the side switch
-3. Navigate menu with direction buttons
-4. Select game with action button
-5. Controls:
-   - Tiny Tris: Left/Right to move, Act to rotate, Down for soft drop
-   - Tiny Pacman: Directional buttons to navigate, avoid ghosts!
-
-## 🙏 Credits
-
-This project builds on the work of amazing developers:
-
-- **Stefan Wagner** ([@wagiminator](https://github.com/wagiminator)) - CH32V003 framework
-- **Charles Lohr** ([@cnlohr](https://github.com/cnlohr)) - CH32V003 tools & community support
-- **Daniel C** ([TinyJoypad](https://www.tinyjoypad.com)) - Original game implementations
-
-## 📄 License
-
-Released under GPL-3.0 License. Share, modify, and spread the joy of tiny gaming!
-
-## 🔗 Useful Links
-
-- [PlatformIO Installation](https://platformio.org/)
-- [CH32V Platform Guide](https://pio-ch32v.readthedocs.io/en/latest/installation.html)
-- [Python Installation Guide](https://www.pythontutorial.net/getting-started/install-python/)
-- [pyenv Setup](https://realpython.com/intro-to-pyenv/)
-
----
-
-*Making the world a little more fun, one tiny arcade at a time! 🕹️*
+- Daniel C ([TinyJoypad](https://www.tinyjoypad.com)) - original Tiny
+  Tris, Tiny Pacman and TESTMODE for the ATtiny85.
+- Stefan Wagner ([@wagiminator](https://github.com/wagiminator)) - CH32V003
+  port of Tiny Tris, I2C and OLED drivers.
+- Charles Lohr ([@cnlohr](https://github.com/cnlohr)) - ch32fun and
+  minichlink.
+- Marco Müller - board design and CH32V003 game integration.
