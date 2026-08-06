@@ -7,9 +7,8 @@
 
 // OLED initialisation sequence
 const uint8_t OLED_INIT_CMD[] = {
-    OLED_MULTIPLEX, 0x3F,            // set multiplex ratio
-    OLED_CONTRAST, OLED_BRIGHTNESS,  // set panel drive level
-    OLED_CHARGEPUMP, 0x14,           // set DC-DC enable
+    OLED_MULTIPLEX, 0x3F,     // set multiplex ratio
+    OLED_CHARGEPUMP, 0x14,    // set DC-DC enable
     OLED_MEMORYMODE, 0x00,    // set horizontal addressing mode
     OLED_COLUMNS, 0x00, 0x7F, // set start and end column
     OLED_PAGES, 0x00, 0x3F,   // set start and end page
@@ -30,13 +29,11 @@ void OLED_init(void)
   I2C_stop();                    // stop transmission
 }
 
-// Send a single command byte
-void OLED_send_command(uint8_t cmd)
+// Start sending data
+void OLED_data_start(void)
 {
-  I2C_start(OLED_ADDR);
-  I2C_write(OLED_CMD_MODE);
-  I2C_write(cmd);
-  I2C_stop();
+  I2C_start(OLED_ADDR);     // start transmission to OLED
+  I2C_write(OLED_DAT_MODE); // set data mode
 }
 
 // OLED set cursor position

@@ -12,7 +12,7 @@
 
 #include "i2c_tx.h"
 
-// Loop count, not a time. Far longer than any byte or block needs.
+// Roughly 30 ms at 24 MHz, far longer than any byte needs.
 #define I2C_TIMEOUT 100000
 
 // Event codes, STAR1 in the low half and STAR2 in the high half
@@ -51,39 +51,6 @@ void I2C_init(void)
   // Enable I2C and acknowledging
   I2C1->CTLR1 |= I2C_CTLR1_PE;
   I2C1->CTLR1 |= I2C_CTLR1_ACK;
-
-  // Pixel data goes out by DMA, see I2C_write_block()
-  RCC->AHBPCENR |= RCC_DMA1EN;
-  I2C1->CTLR2 |= I2C_CTLR2_DMAEN;
-  DMA1_Channel6->PADDR = (uint32_t)&I2C1->DATAR;
-}
-
-// Push a block out over DMA1 channel 6, the I2C1 TX channel.
-//
-// A full page is 128 bytes, about 1.2 ms on the wire. Spinning on TXE for
-// that is what the byte-at-a-time path does; here the core sleeps instead,
-// which is most of a frame once all eight pages are counted.
-void I2C_write_block(const uint8_t *buf, uint16_t len)
-{
-  int32_t timeout = I2C_TIMEOUT;
-
-  DMA1_Channel6->CFGR = 0; // disable before reprogramming
-  DMA1_Channel6->MADDR = (uint32_t)buf;
-  DMA1_Channel6->CNTR = len;
-  DMA1->INTFCR = DMA1_Channel6_IT_Mask;
-  DMA1_Channel6->CFGR = DMA_CFGR1_DIR    // memory -> peripheral
-                        | DMA_CFGR1_MINC // walk the buffer
-                        | DMA_CFGR1_PL_1 // high priority
-                        | DMA_CFGR1_EN;
-
-  while (!(DMA1->INTFR & DMA_TCIF6) && timeout > 0)
-  {
-    sleep_us(200);
-    timeout -= 200;
-  }
-
-  DMA1_Channel6->CFGR = 0;
-  DMA1->INTFCR = DMA1_Channel6_IT_Mask;
 }
 
 // Start I2C transmission (addr must contain R/W bit)
