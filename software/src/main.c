@@ -285,6 +285,12 @@ static void handle_tetris_game(uint8_t *state)
         SKIP_FRAME++;
       }
 
+      if (act_held_long())
+      {
+        return_to_menu(state);
+        break;
+      }
+
       frame_sync(FRAME_US_TETRIS);
     }
   }
@@ -463,6 +469,12 @@ static void handle_pacman_game(uint8_t *state)
         if (Gobeactive && (Frame % 2 == 0))
         {
           JOY_sound((255 - TimerGobeactive), 1);
+        }
+
+        if (act_held_long())
+        {
+          return_to_menu(state);
+          break;
         }
 
         JOY_SLOWDOWN();
@@ -2235,9 +2247,6 @@ uint8_t dots_at(uint8_t x, uint8_t y)
 // with a marker that follows the direction pad and a button indicator that
 // lights while the action button is held.
 //
-// Hold the action button for TEST_EXIT_FRAMES consecutive frames to leave.
-#define TEST_EXIT_FRAMES 50
-
 static uint8_t joytest_row[128];
 static uint8_t joytest_row_y = 0xFF;
 
@@ -2262,7 +2271,6 @@ static uint8_t joytest_at(uint8_t x, uint8_t y)
 static void handle_test_mode(uint8_t *state)
 {
   uint8_t x_joy = 29, y_joy = 30;
-  uint8_t held = 0;
 
   // Rising sweep, same as the original, doubles as a buzzer check.
   for (uint8_t t = 2; t < 250; t++)
@@ -2312,16 +2320,8 @@ static void handle_test_mode(uint8_t *state)
       JOY_OLED_end();
     }
 
-    held = act ? held + 1 : 0;
-    if (held >= TEST_EXIT_FRAMES)
-    {
-      JOY_sound(100, 150);
-      while (JOY_act_pressed()) // do not carry the press into the menu
-        ;
-      show_startup_logo();
-      menu_invalidate();
-      *state = MENU_STATE;
-    }
+    if (act_held_long())
+      return_to_menu(state);
 
     frame_sync(FRAME_US_PACMAN);
   }

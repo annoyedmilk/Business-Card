@@ -46,10 +46,15 @@ as a submodule. No vendor SDK.
         oled_min.c/.h     Minimal SSD1315 driver
         spritebank.h      Sprite and bitmap data
 
-The core runs at 24 MHz and the I2C bus at 1.2 MHz; game speed is fixed
-independently of both by `frame_sync()` in `driver.h`. Rationale for the
-clocking, pacing and data compression choices is commented where each
-lives (`funconfig.h`, `driver.h`, `spritebank.h`).
+The core runs at 12 MHz and the I2C bus at 1 MHz. Game speed does not
+depend on either: `frame_sync()` in `driver.h` holds each pass of a game
+loop to a fixed period, since the ATtiny originals carry no frame timing
+of their own. Pixel data reaches the panel by DMA so the core can sleep
+through the transfer.
+
+Rationale for the clocking, pacing, sleeping and data compression is
+commented where each lives: `funconfig.h`, `driver.h`, `i2c_tx.h` and
+`spritebank.h`.
 
 ### Build
 
@@ -80,8 +85,11 @@ the action button selects: Tiny Tris, Pacman, test mode, sound toggle.
 - Pacman: directions steer.
 - Test mode: for board bring-up. A marker follows the direction pad and
   springs back to centre on release, an indicator lights while action is
-  held, and a tone sweep on entry checks the buzzer. Hold action for
-  about a second to exit.
+  held, and a tone sweep on entry checks the buzzer.
+
+Holding the action button for about a second returns to the menu from
+any of the three. The panel blanks after 30 seconds idle in the menu and
+wakes on any button.
 
 The Tiny Tris high score survives power-off: it is kept in the last
 64-byte page of flash, which the linker script keeps out of the image.

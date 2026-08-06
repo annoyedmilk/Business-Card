@@ -80,13 +80,19 @@ extern "C"
 //
 // These are calibration values, not figures measured from an ATtiny. Tune
 // them until the games feel right; larger is slower.
-#define FRAME_US_PACMAN 12000 // Pacman: one full redraw per pass
+#define FRAME_US_PACMAN 24000 // Pacman: one full redraw per pass
 #define FRAME_US_TETRIS 2000  // Tetris: 7 passes per redraw
 
   // Deadline for the current frame, in free-running SysTick ticks.
   static uint32_t frame_deadline;
 
+  // Wakes the core from sleep_us(). Clearing the flag is all it has to do.
+  void SysTick_Handler(void) __attribute__((interrupt));
+  void SysTick_Handler(void) { SysTick->SR = 0; }
+
   // Wait until the current frame's time budget is used up, then arm the next.
+  // The wait sleeps rather than spins: the games are paced well below what
+  // the hardware manages, so a good part of every frame is spent here.
   static inline void frame_sync(uint32_t period_us)
   {
     uint32_t period = period_us * DELAY_US_TIME;
@@ -96,7 +102,7 @@ extern "C"
       frame_deadline = SysTick->CNT;
     else
       while ((int32_t)(SysTick->CNT - frame_deadline) < 0)
-        ;
+        sleep_us(250); // short naps, so a missed wake costs one more pass
     frame_deadline += period;
   }
 
@@ -108,13 +114,35 @@ extern "C"
 // Kept for the original call site at the bottom of the Pacman loop.
 #define JOY_SLOWDOWN() frame_sync(FRAME_US_PACMAN)
 
+  // ===================================================================================
+  // Page buffer
+  // ===================================================================================
+  // The games emit one pixel column at a time. Rather than push each byte
+  // onto the bus as it is produced, a page is gathered here and handed to DMA
+  // in one go, so the core sleeps through the transfer instead of spinning on
+  // TXE. A page is at most 128 columns, which is also the widest any caller
+  // writes.
+  static uint8_t oled_buf[128];
+  static uint8_t oled_len;
+
+  static void oled_flush(void)
+  {
+    if (!oled_len)
+      return;
+    I2C_start(OLED_ADDR);
+    I2C_write(OLED_DAT_MODE);
+    I2C_write_block(oled_buf, oled_len);
+    I2C_stop();
+    oled_len = 0;
+  }
+
 // OLED
-#define JOY_OLED_end I2C_stop
-#define JOY_OLED_send(b) I2C_write(b)
+#define JOY_OLED_end oled_flush
+#define JOY_OLED_send(b) (oled_buf[oled_len++] = (uint8_t)(b))
 #define JOY_OLED_data_start(y) \
   {                            \
     OLED_setpos(0, y);         \
-    OLED_data_start();         \
+    oled_len = 0;              \
   }
 
 // Buttons
@@ -138,7 +166,8 @@ extern "C"
   // Implementation of declared functions
   static inline void JOY_init(void)
   {
-    SystemInit(); // HSI, no PLL, no AHB division: 24 MHz
+    SystemInit();
+    RCC->CFGR0 = RCC_HPRE_DIV2; // SystemInit leaves HSI undivided; halve it
 
     funGpioInitAll();
 
@@ -154,6 +183,8 @@ extern "C"
     // it; funAnalogInit() leaves every channel on a longer one.
     ADC1->SAMPTR1 = 0;
     ADC1->SAMPTR2 = 0;
+
+    NVIC_EnableIRQ(SysTick_IRQn); // wake source for frame_sync()
 
     OLED_init();
   }
@@ -222,7 +253,7 @@ extern "C"
 
   static const uint8_t FONT5[] = {
       0x00, 0x00, 0x00, 0x00, 0x00, // space
-      0x00, 0x36, 0x36, 0x00, 0x00, // :
+      0x36, 0x36, 0x00, 0x00, 0x00, // : (narrow, see draw_glyphs)
       0x7E, 0x11, 0x11, 0x11, 0x7E, // A
       0x3E, 0x41, 0x41, 0x41, 0x22, // C
       0x7F, 0x41, 0x41, 0x41, 0x3E, // D
@@ -248,7 +279,11 @@ extern "C"
   static const uint8_t STR_SND_OFF[] = {GL_S, GL_O, GL_U, GL_N, GL_D, GL_COL, GL_O, GL_F, GL_F};
 
   // Screen page each menu entry is drawn on.
-  static const uint8_t MENU_PAGE[] = {1, 3, 5, 7};
+  //
+  // Four single-page lines with a blank page between them need seven of the
+  // eight pages, so there is room for a margin at one end only. Page 7 is
+  // left free, which keeps the last entry off the bottom edge.
+  static const uint8_t MENU_PAGE[] = {0, 2, 4, 6};
 
   // Draw glyphs on a page, inverted, after `lead` blank columns.
   static void draw_glyphs(uint8_t page, const uint8_t *str, uint8_t n, uint8_t lead)
@@ -258,8 +293,13 @@ extern "C"
       JOY_OLED_send(~0x00);
     while (n--)
     {
-      const uint8_t *g = &FONT5[(*str++) * 5];
-      for (uint8_t i = 0; i < 5; i++)
+      uint8_t idx = *str++;
+      // The colon only uses two of its five columns. Drawn full width it
+      // leaves a three-column gap either side, far wider than the single
+      // column between letters, so it gets a narrow cell of its own.
+      uint8_t w = (idx == GL_COL) ? 2 : 5;
+      const uint8_t *g = &FONT5[idx * 5];
+      while (w--)
         JOY_OLED_send(~*g++);
       JOY_OLED_send(~0x00); // inter-character gap
     }
@@ -281,9 +321,44 @@ extern "C"
   static uint8_t menu_drawn = 255;
 #define menu_invalidate() (menu_drawn = 255)
 
+// Blank the panel after this long with no input. The OLED draws far more
+// than the MCU does, so switching it off is the single biggest saving
+// available when the board is left switched on.
+#define IDLE_BLANK_MS 30000
+
+  static uint32_t menu_idle_since;
+  static uint8_t panel_off;
+
   static inline void handle_menu(uint8_t *game_state, uint8_t *current_game)
   {
     bool needsRedraw = false;
+    bool anyInput = JOY_act_pressed() || JOY_up_pressed() || JOY_down_pressed();
+
+    if (anyInput)
+    {
+      menu_idle_since = SysTick->CNT;
+      if (panel_off) // wake, and swallow this press
+      {
+        panel_off = 0;
+        OLED_send_command(OLED_DISPLAY_ON);
+        while (JOY_act_pressed())
+          ;
+        DLY_ms(200);
+        return;
+      }
+    }
+    else if (!panel_off &&
+             (SysTick->CNT - menu_idle_since) > (uint32_t)IDLE_BLANK_MS * DELAY_MS_TIME)
+    {
+      panel_off = 1;
+      OLED_send_command(OLED_DISPLAY_OFF);
+    }
+
+    if (panel_off)
+    {
+      sleep_us(50000); // nothing to draw, idle between polls
+      return;
+    }
 
     // Handle menu navigation
     if (JOY_up_pressed() && menu_position > 0)
@@ -339,6 +414,45 @@ extern "C"
 
       menu_drawn = menu_position;
     }
+  }
+
+  // ===================================================================================
+  // Leaving a game
+  // ===================================================================================
+  // Holding the action button returns to the menu from anywhere. Timed rather
+  // than counted in frames, so it feels the same in all three modes despite
+  // their very different frame rates.
+#define HOLD_EXIT_MS 800
+
+  static uint32_t act_down_at;
+  static uint8_t act_was_down;
+
+  // Call once per frame.
+  static inline uint8_t act_held_long(void)
+  {
+    if (!JOY_act_pressed())
+    {
+      act_was_down = 0;
+      return 0;
+    }
+    if (!act_was_down)
+    {
+      act_was_down = 1;
+      act_down_at = SysTick->CNT;
+      return 0;
+    }
+    return (SysTick->CNT - act_down_at) > (uint32_t)HOLD_EXIT_MS * DELAY_MS_TIME;
+  }
+
+  static inline void return_to_menu(uint8_t *state)
+  {
+    JOY_sound(100, 150);
+    while (JOY_act_pressed()) // do not carry the press into the menu
+      ;
+    act_was_down = 0;
+    show_startup_logo();
+    menu_invalidate();
+    *state = MENU_STATE;
   }
 
   static inline uint8_t JOY_up_pressed(void)
