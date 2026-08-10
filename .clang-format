@@ -1,0 +1,26 @@
+# Project formatting standard.
+#
+# This codifies the style the firmware is already written in rather than
+# imposing a new one, so running the formatter over the tree is close to a
+# no-op and does not bury real changes in style churn.
+#
+# Zed and any other clangd-backed editor pick this up automatically, as does
+# `make format` in software/.
+#
+# ColumnLimit 0 means "never reflow a line I did not ask you to reflow". That
+# matters here: the ported TinyJoypad code has some very long expressions that
+# are clearer left alone, and reflowing them would rewrite most of the game
+# sources for no benefit.
+#
+# The sprite tables in software/src/spritebank.c are wrapped in
+# `clang-format off`; they are hand-packed image data, not code.
+#
+# The ch32fun submodule carries its own .clang-format, which wins for its own
+# files since clang-format uses the nearest config.
+
+BasedOnStyle: LLVM
+BreakBeforeBraces: Allman
+IndentWidth: 2
+ColumnLimit: 0
+SortIncludes: false
+AlignConsecutiveMacros: false

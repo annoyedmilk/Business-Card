@@ -4,16 +4,18 @@
 //
 // 2022 by Stefan Wagner: https://github.com/wagiminator
 //
-// ch32fun ships an SSD1306 driver of its own, but it renders out of a
-// 1024-byte framebuffer, which does not fit alongside the games in 2K of RAM.
-// This one streams straight to the panel a page at a time instead.
+// ch32fun ships two SSD1306 drivers, neither of which fits here:
+//
+// - extralibs/ssd1306.h renders out of a 1024-byte framebuffer, which does not
+//   fit alongside the games in 2K of RAM.
+// - extralibs/ssd1306_i2c.h is packet-based, and ssd1306_pkt_send() builds its
+//   packet in a 33-byte stack buffer, so it cannot carry a 128-byte page. Its
+//   error path also calls printf, which funconfig.h disables to save flash.
+//
+// This one streams straight to the panel a page at a time instead. Its bus
+// setup still follows ssd1306_i2c.h; see i2c_tx.c.
 
 #pragma once
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
 
 #include "i2c_tx.h"
 
@@ -35,11 +37,17 @@ extern "C"
 #define OLED_YFLIP 0xC8       // flip display vertically
 #define OLED_COMPINS 0xDA     // set COM pin config (following byte)
 
-    // Functions
-    void OLED_init(void);
-    void OLED_data_start(void);
-    void OLED_setpos(uint8_t x, uint8_t y);
+// Functions
+void OLED_init(void);
+void OLED_data_start(void);
+void OLED_setpos(uint8_t x, uint8_t y);
 
-#ifdef __cplusplus
-};
-#endif
+// Page streaming. The renderers compute one byte per column and hand it
+// straight to the bus, so no framebuffer is needed.
+#define OLED_page_start(y) \
+  {                        \
+    OLED_setpos(0, y);     \
+    OLED_data_start();     \
+  }
+#define OLED_send(b) I2C_write(b)
+#define OLED_end I2C_stop

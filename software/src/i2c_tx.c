@@ -16,8 +16,8 @@
 #define I2C_TIMEOUT 100000
 
 // Event codes, STAR1 in the low half and STAR2 in the high half
-#define I2C_EVT_START 0x00030001    // BUSY, MSL, SB
-#define I2C_EVT_ADDR 0x00070082     // BUSY, MSL, ADDR, TXE, TRA
+#define I2C_EVT_START 0x00030001       // BUSY, MSL, SB
+#define I2C_EVT_ADDR 0x00070082        // BUSY, MSL, ADDR, TXE, TRA
 #define I2C_EVT_TRANSMITTED 0x00070084 // BUSY, MSL, TXE, BTF, TRA
 
 // Read order matters: STAR1 before STAR2.
@@ -34,8 +34,9 @@ void I2C_init(void)
   RCC->APB2PCENR |= RCC_AFIOEN | RCC_IOPCEN;
   RCC->APB1PCENR |= RCC_I2C1EN;
 
-  // Set pin PC1 (SDA) and PC2 (SCL) to output, open-drain, 10MHz, multiplex
-  GPIOC->CFGLR = (GPIOC->CFGLR & ~(((uint32_t)0b1111 << (1 << 2)) | ((uint32_t)0b1111 << (2 << 2)))) | (((uint32_t)0b1101 << (1 << 2)) | ((uint32_t)0b1101 << (2 << 2)));
+  // PC1 (SDA) and PC2 (SCL): alternate function, open drain, 10 MHz
+  funPinMode(PC1, GPIO_CFGLR_OUT_10Mhz_AF_OD);
+  funPinMode(PC2, GPIO_CFGLR_OUT_10Mhz_AF_OD);
 
   // Reset the peripheral so every register starts from a known state
   RCC->APB1PRSTR |= RCC_APB1Periph_I2C1;

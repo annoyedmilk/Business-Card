@@ -1,9 +1,4 @@
 # Build products
-/software/src/main.elf
-/software/src/main.bin
-/software/src/main_ext.bin
-/software/src/main.hex
-/software/src/main.lst
-/software/src/main.map
+/software/bin/
 
 .DS_Store
